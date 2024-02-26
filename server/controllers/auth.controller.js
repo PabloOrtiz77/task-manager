@@ -1,115 +1,146 @@
-import User from '../models/user.model.js';
-import bcrypt from 'bcryptjs';
-import { createAccessToken } from '../libs/jwt.js';
-import jwt from 'jsonwebtoken';
-import { TOKEN_SECRET } from '../config.js';
-//REGISTER
-export const register = async (req, res) => {
-    const {email, password, username} = req.body;
+const jwt = require("jsonwebtoken");
+const User = require("../models/user.model");
+const bcrypt = require("bcrypt");
 
-    try{
+const secretKey = process.env.JWT_SECRET_KEY;
 
-      const userFound = await User.findOne({email})
-      if (userFound) return res.status(400).json(["The email is alredy in use"]);
-        //bcrypt: encriptado, más seguridad.
-        // hash: hará que las contraseñas se vean así por ejemplo: mfnvilrwngwfe%$#&%$.
-        const passwordHash = await bcrypt.hash(password, 10) //10: cantidad de veces que se va a ejecutar el algoritmo.
-
-        const newUser = new User({
-            username,
-            email,
-            password: passwordHash,
-        });
-
-      const userSaved = await newUser.save();
-      const token = await createAccessToken({id: userSaved._id});
-      
-      res.cookie('token', token);
-      res.json({
-         id: userSaved._id,
-         username: userSaved.username,
-         email: userSaved.email,
-         createdAt: userSaved.createdAt,
-         updatedAt: userSaved.updatedAt,
-         //no pongo para pedir la contraseña, no es un dato importante jeje
-       });
-      console.log("Registrando Usuario");/////////////
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-      console.log("Error: No se pudo registrar");/////////////
-    }
-};
-//LOGIN
-export const login = async (req, res) => {
-  const { email, password } = req.body;
-
-  try{
-
-      const userFound = await User.findOne({email})
-
-      if (!userFound) return res.status(400).json({ message: "User not found"});
-      //bcrypt: encriptado, más seguridad.
-      // hash: hará que las contraseñas se vean así por ejemplo: mfnvilrwngwfe%$#&%$.
-      const isMatch = await bcrypt.compare(password, userFound.password) //10: cantidad de veces que se va a ejecutar el algoritmo.
-
-      if (!isMatch) return res.status(400).json({ message: "Incorrect password"});
-
-
-    const token = await createAccessToken({id: userFound._id});
-    
-    res.cookie('token', token);
-    res.json({
-       id: userFound._id,
-       username: userFound.username,
-       email: userFound.email,
-       createdAt: userFound.createdAt,
-       updatedAt: userFound.updatedAt,
-       //no pongo para pedir la contraseña, no es un dato importante jeje
-     });
-    console.log("Login: se encontró al usuario en la base de datos")
+module.exports.getUser = async (req, res) => {
+  try {
+    findUser = await User.find().sort({ name: 1 }); //ordena alfabeticamente
+    res.status(200);
+    res.json(findUser);
   } catch (error) {
-    res.status(500).json({ message: error.message });
-    console.log("error: no se encontró al usuario en la base de datos")
+    res.status(500);
+    res.json(error);
   }
 };
-//LOG OUT
-export const logout = (req, res) => {
-  res.cookie('token', "", {
-    expires: new Date(0),
-  });
-  return res.sendStatus(200);
-}
-//PROFILE
-export const profile = async (req, res) => {
-  const userFound = await User.findById(req.user.id)
-   
-  if(!userFound) return res.status(400).json({ message: "User not found"});
 
-  return res.json({
-    id: userFound._id,
-    username: userFound.username,
-    email: userFound.email,
-    createdAt: userFound.createdAt,
-    updatedAt: userFound.updatedAt,
-  })
+module.exports.getUserById = async (req, res) => {
+  try {
+    findUserId = await User.findById(req.params.id);
+    res.status(200);
+    res.json(findUserId);
+  } catch (error) {
+    res.status(500);
+    res.json(error);
+  }
 };
 
-export const verifyToken = async (req, res) => {
-  const {token} = req.cookies
+module.exports.CreateUser = async (req, res) => {
+  try {
+    const crearUser = await User.create(req.body);
+    res.status(201); //201 significa creado
+    res.json(crearUser);
+  } catch (error) {
+    res.status(500);
+    res.json(error);
+  }
+};
 
-  if(!token) return res.status(401).json({message: "Unauthorized"});
+module.exports.UpdateUser = async (req, res) => {
+  try {
+    const updateUser = await User.findOneAndUpdate(
+      { _id: req.params.id },
+      req.body,
+      { new: true, runValidators: true } //runvalidators lo que hace es que vuelve a revalidar
+    );
+    res.status(201); //201 significa creado
+    res.json(updateUser);
+  } catch (error) {
+    res.status(500);
+    res.json(error);
+  }
+};
 
-  jwt.verify(token, TOKEN_SECRET, async (err, user) =>{
-    if (err) return res.status(401).json({message: "Unauthorized"});
+module.exports.DeleteUser = async (req, res) => {
+  try {
+    const deleteUser = await User.deleteOne({
+      _id: req.params.id,
+    });
+    res.status(200);
+    res.json(deleteUser);
+  } catch (error) {
+    res.status(500);
+    res.json(error);
+  }
+};
 
-    const userFound = await User.findById(user.id)
-    if (!userFound) return res.status(401).json({message: "Unauthorized"});
+//Metodos Login
+//Aca haremos la parte de login
+module.exports.Login = async (req, res) => {
+  //Pasos del Logeo
 
-    return res.json({
-      id: userFound._id,
-      username: userFound.username,
-      email: userFound.email,
-    })
+  try {
+    //Buscar Usuario
+    const usuario = await User.findOne({ email: req.body.email });
+    //Si no existe paro y retorno resultado
+    if (usuario === null) {
+      res.status(404);
+      res.json({
+        errors: {
+          email: {
+            message: "usuario no encontrado",
+          },
+        },
+      });
+      return;
+    }
+    //Si existe revisamos contraseñas
+    const validatePassword = await bcrypt.compare(
+      req.body.password,
+      usuario.password
+    );
 
-  })
-}
+    //Si contraseña no existe paro y retorno resultado
+    if (!validatePassword) {
+      res.status(401);
+      res.json({
+        errors: {
+          password: {
+            message: "Contraseña incorrecta",
+          },
+        },
+      });
+      return;
+    }
+    //Si contra OK generar jwt y cookie
+    const newJWT = jwt.sign({ _id: usuario._id }, secretKey, {
+      expiresIn: "50 minutes",
+    });
+    res.cookie("userToken", newJWT, {
+      httpOnly: true,
+    });
+    res.status(200);
+    res.json({ message: "Loged OK" });
+  } catch (error) {
+    res.status(500);
+    res.json({
+      errors: {
+        server: {
+          message: error,
+        },
+      },
+    });
+  }
+};
+
+//Fin parte del login
+
+module.exports.cookie = async (req, res) => {
+  try {
+    res.cookie("mycookie", secretKey, { httpOnly: true });
+    res.json({ message: "ok" });
+  } catch (error) {
+    res.json(error);
+  }
+};
+
+//Para cerrar la sesion y borrar cookies
+module.exports.logOut = async (req, res) => {
+  try {
+    res.clearCookie("userToken"); // Eliminar la cookie de sesión
+    res.status(200).json({ message: "Sesión cerrada" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
