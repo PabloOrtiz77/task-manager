@@ -18,4 +18,8 @@ app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
 const userRutes = require("./routes/user.routes");
 app.use("/api/user", userRutes);
 
+//Ruta Task
+const taskRouter = require("./routes/tasks.routes");
+app.use("/api/user", taskRouter);
+
 app.listen(port, () => console.log(`server run on port ${port}`));
